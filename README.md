@@ -2,7 +2,7 @@
 
 > **Crypto World's Fair 2026 — Superteam Türkiye × Arf University Track Submission**  
 > Developed by **Altan Çetin Çelik** (Pamukkale University, Department of Electrical & Electronics Engineering)  
-> Live Demo: [rota-payfi.vercel.app](https://rota-payfi.vercel.app) *(Deploy pending)* | Portfolio: [altancelik.dev](https://altancelik.dev)
+> Live Demo: [rota-seven-eta.vercel.app](https://rota-seven-eta.vercel.app) | Portfolio: [altancelik.dev](https://altancelik.dev)
 
 ---
 
