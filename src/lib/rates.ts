@@ -1,200 +1,157 @@
+export type Currency = 'USD' | 'EUR' | 'GBP' | 'TRY';
+
+export const CURRENCIES: Currency[] = ['EUR', 'USD', 'GBP', 'TRY'];
+
+export const CURRENCY_SYMBOL: Record<Currency, string> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  TRY: '₺',
+};
+
+/** Mid-market rates expressed as "units of currency per 1 USD". */
 export interface ExchangeRates {
-  USD_TRY: number;
-  EUR_TRY: number;
-  EUR_USD: number;
-  GBP_TRY: number;
-  USDC_TRY: number; // typically slightly closer to interbank or spot
-  SOL_USD: number;
-  lastUpdated: string;
+  perUSD: Record<Currency, number>;
+  source: string;
+  updatedAt: string; // ISO timestamp from the provider
+  live: boolean;
 }
 
-export type Currency = 'EUR' | 'USD' | 'GBP' | 'TRY';
+/** Used only if the live provider is unreachable. Clearly flagged as stale in the UI. */
+export const FALLBACK_RATES: ExchangeRates = {
+  perUSD: { USD: 1, EUR: 0.8926, GBP: 0.7556, TRY: 49.34 },
+  source: 'fallback snapshot (12 Oct 2026)',
+  updatedAt: '2026-10-12T00:02:32.000Z',
+  live: false,
+};
+
+export function midMarketRate(rates: ExchangeRates, from: Currency, to: Currency): number {
+  return rates.perUSD[to] / rates.perUSD[from];
+}
+
+export function formatMoney(value: number, currency: Currency, digits = 2): string {
+  return `${CURRENCY_SYMBOL[currency]}${value.toLocaleString('en-US', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
+}
+
+export type RailId = 'rota' | 'wise' | 'operator' | 'bank';
 
 export interface RailBreakdown {
-  id: 'rota' | 'bank' | 'operator' | 'wise';
+  id: RailId;
   name: string;
   tagline: string;
-  badge?: string;
-  isBest: boolean;
   amountSent: number;
   sourceCurrency: Currency;
   targetCurrency: Currency;
   amountReceived: number;
-  effectiveRate: number;
-  totalFeesCost: number; // in target currency
-  fixedFee: number; // in source currency
-  fxSpreadPercent: number;
+  totalCost: number; // in target currency, vs. mid-market
+  costPercent: number;
+  fixedFeeUSD: number;
+  fxMarkupPercent: number;
   speed: string;
   speedCategory: 'instant' | 'hours' | 'days';
-  steps: string[];
-  disclaimer: string;
+  availability: string;
+  notes: string;
 }
 
-// Baseline realistic rates (fallback & live anchor)
-export const DEFAULT_RATES: ExchangeRates = {
-  USD_TRY: 35.85,
-  EUR_TRY: 38.65,
-  EUR_USD: 1.078,
-  GBP_TRY: 45.40,
-  USDC_TRY: 35.82,
-  SOL_USD: 148.50,
-  lastUpdated: new Date().toISOString(),
-};
+interface RailAssumption {
+  id: RailId;
+  name: string;
+  tagline: string;
+  fixedFeeUSD: number; // flat fees, converted from USD into the source currency
+  fxMarkupPercent: number; // spread over mid-market
+  speed: string;
+  speedCategory: RailBreakdown['speedCategory'];
+  availability: string;
+  notes: string;
+}
 
 /**
- * Calculates net received amounts across 4 rails:
- * 1. Rota (Solana USDC / PayFi): 0.15% spread, $0.001 network fee, instant
- * 2. Traditional Bank SWIFT: $30 fixed fee + 3.2% hidden FX markup, 3-5 days
- * 3. Remittance Operator (Western Union/Ria): $12 fee + 2.6% markup, 1-2 days
- * 4. Wise / Traditional Fintech: 1.4% total fee, 6-24 hours
+ * Fee assumptions. These are ESTIMATES based on typical public fee schedules for
+ * EUR/USD -> TRY retail corridors. Actual costs vary by provider, amount and day.
+ * They are shown to users as estimates, not quotes.
  */
+export const RAIL_ASSUMPTIONS: RailAssumption[] = [
+  {
+    id: 'rota',
+    name: 'Rota on Solana',
+    tagline: 'USDC payment request, settled on-chain',
+    // Solana network fee is ~0.000005 SOL. The real cost is converting fiat <-> USDC
+    // on a local exchange at each end, estimated at ~0.3% per side.
+    fixedFeeUSD: 0.001,
+    fxMarkupPercent: 0.6,
+    speed: 'Seconds on-chain',
+    speedCategory: 'instant',
+    availability: '24/7, incl. weekends',
+    notes: 'Includes an estimated 0.3% exchange cost on each side (fiat → USDC → fiat).',
+  },
+  {
+    id: 'wise',
+    name: 'Digital remittance',
+    tagline: 'Wise-style fintech transfer',
+    fixedFeeUSD: 2.5,
+    fxMarkupPercent: 1.0,
+    speed: 'Minutes – 1 day',
+    speedCategory: 'hours',
+    availability: 'Depends on local bank rails',
+    notes: 'Typically the cheapest fiat option. Limits and TRY payout rules apply.',
+  },
+  {
+    id: 'operator',
+    name: 'Money transfer operator',
+    tagline: 'Western Union / Ria style',
+    fixedFeeUSD: 10,
+    fxMarkupPercent: 2.5,
+    speed: 'Minutes – 2 days',
+    speedCategory: 'hours',
+    availability: 'Agent opening hours',
+    notes: 'Flat fee plus a wider FX margin; fast for cash pickup.',
+  },
+  {
+    id: 'bank',
+    name: 'Bank wire (SWIFT)',
+    tagline: 'Correspondent banking',
+    fixedFeeUSD: 30,
+    fxMarkupPercent: 3.0,
+    speed: '2 – 5 business days',
+    speedCategory: 'days',
+    availability: 'Business days only',
+    notes: 'Sender fee + possible intermediary deductions + receiving bank FX margin.',
+  },
+];
+
 export function calculateRails(
   amount: number,
   from: Currency,
   to: Currency,
-  rates: ExchangeRates = DEFAULT_RATES
+  rates: ExchangeRates
 ): RailBreakdown[] {
-  if (amount <= 0) amount = 100;
+  const safeAmount = amount > 0 ? amount : 0;
+  const mid = midMarketRate(rates, from, to);
+  const ideal = safeAmount * mid;
 
-  // Compute baseline mid-market rate
-  let midMarketRate = 1;
-  if (from === 'EUR' && to === 'TRY') midMarketRate = rates.EUR_TRY;
-  else if (from === 'USD' && to === 'TRY') midMarketRate = rates.USD_TRY;
-  else if (from === 'GBP' && to === 'TRY') midMarketRate = rates.GBP_TRY;
-  else if (from === 'TRY' && to === 'EUR') midMarketRate = 1 / rates.EUR_TRY;
-  else if (from === 'TRY' && to === 'USD') midMarketRate = 1 / rates.USD_TRY;
-  else if (from === 'EUR' && to === 'USD') midMarketRate = rates.EUR_USD;
-  else if (from === 'USD' && to === 'EUR') midMarketRate = 1 / rates.EUR_USD;
-  else midMarketRate = 1;
-
-  const theoreticalMax = amount * midMarketRate;
-
-  // 1. ROTA (Solana USDC Rail)
-  // Network fee = ~$0.001 (negligible)
-  // VASP exchange fee = 0.15%
-  const rotaFixedFee = from === 'TRY' ? 1.0 : 0.05;
-  const rotaFxSpread = 0.15; // 0.15%
-  const rotaEffectiveRate = midMarketRate * (1 - rotaFxSpread / 100);
-  const rotaReceived = Math.max(0, (amount - rotaFixedFee) * rotaEffectiveRate);
-  const rotaCost = theoreticalMax - rotaReceived;
-
-  // 2. TRADITIONAL BANK (SWIFT + Intermediary)
-  // Fixed fee: ~€25 / $30 / 850 TL
-  // Hidden FX markup: ~3.2%
-  const bankFixedFee = from === 'EUR' ? 28 : from === 'USD' ? 30 : from === 'GBP' ? 25 : 950;
-  const bankFxSpread = 3.25; // 3.25% hidden bank spread
-  const bankEffectiveRate = midMarketRate * (1 - bankFxSpread / 100);
-  const bankDeductible = Math.max(0, amount - bankFixedFee);
-  const bankReceived = bankDeductible * bankEffectiveRate;
-  const bankCost = theoreticalMax - bankReceived;
-
-  // 3. REMITTANCE OPERATOR (Western Union / MoneyGram)
-  // Fixed fee: ~€8-15 / 350 TL
-  // FX markup: ~2.5%
-  const opFixedFee = from === 'EUR' ? 9 : from === 'USD' ? 10 : from === 'GBP' ? 8 : 400;
-  const opFxSpread = 2.45;
-  const opEffectiveRate = midMarketRate * (1 - opFxSpread / 100);
-  const opReceived = Math.max(0, (amount - opFixedFee) * opEffectiveRate);
-  const opCost = theoreticalMax - opReceived;
-
-  // 4. DIGITAL FINTECH (Wise / Remitly style)
-  const wiseFixedFee = from === 'EUR' ? 2.5 : from === 'USD' ? 3.0 : 90;
-  const wiseFxSpread = 1.35;
-  const wiseEffectiveRate = midMarketRate * (1 - wiseFxSpread / 100);
-  const wiseReceived = Math.max(0, (amount - wiseFixedFee) * wiseEffectiveRate);
-  const wiseCost = theoreticalMax - wiseReceived;
-
-  const rails: RailBreakdown[] = [
-    {
-      id: 'rota',
-      name: 'Rota (Solana PayFi)',
-      tagline: 'Zero hidden spread, on-chain finality',
-      badge: 'En Avantajlı & Anında',
-      isBest: true,
-      amountSent: amount,
+  return RAIL_ASSUMPTIONS.map((a) => {
+    const fixedInSource = a.fixedFeeUSD * rates.perUSD[from];
+    const received = Math.max(0, (safeAmount - fixedInSource) * mid * (1 - a.fxMarkupPercent / 100));
+    const cost = ideal - received;
+    return {
+      id: a.id,
+      name: a.name,
+      tagline: a.tagline,
+      amountSent: safeAmount,
       sourceCurrency: from,
       targetCurrency: to,
-      amountReceived: Number(rotaReceived.toFixed(2)),
-      effectiveRate: Number(rotaEffectiveRate.toFixed(4)),
-      totalFeesCost: Number(rotaCost.toFixed(2)),
-      fixedFee: rotaFixedFee,
-      fxSpreadPercent: rotaFxSpread,
-      speed: '~400 ms (Anında)',
-      speedCategory: 'instant',
-      steps: [
-        'Yerel VASP üzerinden sıfır komisyonlu USDC temini',
-        'Solana Devnet/Mainnet üzerinden 400ms transfer',
-        'Hedef IBAN veya cüzdana anında kayıpsız teslimat',
-      ],
-      disclaimer: 'Solana blokzincirinde teyit edilir, fonlar aracı banka olmadan doğrudan cüzdana geçer.',
-    },
-    {
-      id: 'wise',
-      name: 'Dijital Havale (Wise / Fintech)',
-      tagline: 'Geleneksel fintech kanalı',
-      isBest: false,
-      amountSent: amount,
-      sourceCurrency: from,
-      targetCurrency: to,
-      amountReceived: Number(wiseReceived.toFixed(2)),
-      effectiveRate: Number(wiseEffectiveRate.toFixed(4)),
-      totalFeesCost: Number(wiseCost.toFixed(2)),
-      fixedFee: wiseFixedFee,
-      fxSpreadPercent: wiseFxSpread,
-      speed: '6 - 24 Saat',
-      speedCategory: 'hours',
-      steps: [
-        'Fintech havuzuna yerel havale',
-        'İç takas eşleşmesi',
-        'Alıcı banka hesabına aktarım',
-      ],
-      disclaimer: 'TR tarafında limitlere ve iş günlerine tabidir.',
-    },
-    {
-      id: 'operator',
-      name: 'Acente Havalesi (Western Union vb.)',
-      tagline: 'Nakit acente ağı',
-      isBest: false,
-      amountSent: amount,
-      sourceCurrency: from,
-      targetCurrency: to,
-      amountReceived: Number(opReceived.toFixed(2)),
-      effectiveRate: Number(opEffectiveRate.toFixed(4)),
-      totalFeesCost: Number(opCost.toFixed(2)),
-      fixedFee: opFixedFee,
-      fxSpreadPercent: opFxSpread,
-      speed: '1 - 2 İş Günü',
-      speedCategory: 'days',
-      steps: [
-        'Acente komisyonu kesintisi',
-        'Geniş döviz makası uygulanması',
-        'Nakit gişe veya banka teslimatı',
-      ],
-      disclaimer: 'Yüksek kur marjı ve acente işlem komisyonu içerir.',
-    },
-    {
-      id: 'bank',
-      name: 'Geleneksel Banka (SWIFT)',
-      tagline: 'Muhabir banka ağı',
-      isBest: false,
-      amountSent: amount,
-      sourceCurrency: from,
-      targetCurrency: to,
-      amountReceived: Number(bankReceived.toFixed(2)),
-      effectiveRate: Number(bankEffectiveRate.toFixed(4)),
-      totalFeesCost: Number(bankCost.toFixed(2)),
-      fixedFee: bankFixedFee,
-      fxSpreadPercent: bankFxSpread,
-      speed: '2 - 4 İş Günü',
-      speedCategory: 'days',
-      steps: [
-        'Gönderen banka SWIFT işlem ücreti ($25+)',
-        '1-2 Muhabir banka aracılık kesintisi ($15-20)',
-        'Hedef bankanın uyguladığı %3+ döviz makası',
-      ],
-      disclaimer: 'Hafta sonu takas kapalıdır, muhabir banka kesintileri önceden bilinemez.',
-    },
-  ];
-
-  return rails;
+      amountReceived: received,
+      totalCost: cost,
+      costPercent: ideal > 0 ? (cost / ideal) * 100 : 0,
+      fixedFeeUSD: a.fixedFeeUSD,
+      fxMarkupPercent: a.fxMarkupPercent,
+      speed: a.speed,
+      speedCategory: a.speedCategory,
+      availability: a.availability,
+      notes: a.notes,
+    };
+  });
 }

@@ -13,13 +13,15 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ROTA — Sınır Ötesi PayFi Yönlendiricisi | Solana",
-  description: "Öğrenciler ve serbest çalışanlar için sıfır gizli makaslı, anında 400ms sınır ötesi para transferi. Banka ve SWIFT kesintilerini ortadan kaldıran Solana PayFi altyapısı.",
-  keywords: ["Solana", "PayFi", "Remittance", "Cross-border", "Turkey", "Erasmus", "Freelance", "USDC"],
+  title: "Rota — Cross-border payment requests on Solana",
+  description:
+    "Students and young freelancers in Türkiye request money from abroad with a link. Payers settle in USDC via Solana Pay; receipts are verified on-chain.",
+  keywords: ["Solana", "Solana Pay", "PayFi", "Remittance", "Cross-border", "Turkey", "Erasmus", "Freelance", "USDC"],
   authors: [{ name: "Altan Çetin Çelik", url: "https://altancelik.dev" }],
+  icons: { icon: "/icon.png" },
   openGraph: {
-    title: "ROTA — Cross-Border PayFi Remittance Router on Solana",
-    description: "Compare live bank SWIFT fees, hidden FX markups, and instant Solana PayFi rails.",
+    title: "Rota — Cross-border payment requests on Solana",
+    description: "Request money from abroad with a link. Paid in USDC in seconds, verified on-chain.",
     type: "website",
   },
 };
@@ -31,7 +33,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="tr"
+      lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
       <body className="min-h-full flex flex-col bg-black text-white">{children}</body>
