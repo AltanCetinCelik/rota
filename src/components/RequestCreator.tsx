@@ -107,11 +107,22 @@ export const RequestCreator: React.FC<Props> = ({ rates }) => {
           {wallet.connecting ? 'Connecting…' : wallet.hasWallet ? `Use ${wallet.walletName}` : 'Get a wallet'}
         </button>
       </div>
-      {touched && !addressOk && (
-        <p className="mt-1.5 flex items-center gap-1 text-[11px] text-rose-400">
-          <AlertCircle className="h-3 w-3" /> Enter a valid Solana address.
-        </p>
-      )}
+      <div className="mt-1 flex items-center justify-between text-[11px]">
+        {touched && !addressOk ? (
+          <p className="flex items-center gap-1 text-rose-400">
+            <AlertCircle className="h-3 w-3" /> Enter a valid Solana address.
+          </p>
+        ) : (
+          <span className="text-zinc-500">Base58 Solana public key</span>
+        )}
+        <button
+          type="button"
+          onClick={() => setRecipient('8F47n1E8uV62c7R8e9V6fK7N4x4L3y2k5b1A3C4D5E6F')}
+          className="text-purple-400 hover:text-purple-300 underline font-mono"
+        >
+          Fill demo address
+        </button>
+      </div>
 
       {/* Amount + token */}
       <div className="mt-4 grid grid-cols-3 gap-2">
